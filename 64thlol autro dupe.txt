@@ -1,0 +1,218 @@
+local ReplicatedStorage = cloneref(game:GetService('ReplicatedStorage'))
+local Players = cloneref(game:GetService('Players'))
+local Player = Players.LocalPlayer
+
+-- UI Setup: Logo background with text overlays
+local function setupDupeUI()
+    local playerGui = Player:WaitForChild('PlayerGui')
+
+    local screenGui = Instance.new('ScreenGui')
+    screenGui.Name = 'DupeGui'
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = playerGui
+
+    -- Logo background (draggable)
+    local logoFrame = Instance.new('ImageLabel')
+    logoFrame.Name = 'LogoFrame'
+    logoFrame.Size = UDim2.new(0, 160, 0, 160)
+    logoFrame.Position = UDim2.new(0, 10, 0, 50)
+    logoFrame.BackgroundTransparency = 1
+    logoFrame.Image = 'rbxassetid://71564237597540' -- your logo
+    logoFrame.Parent = screenGui
+
+    -- "Dupe: OFF" label
+    local statusLabel = Instance.new('TextLabel')
+    statusLabel.Size = UDim2.new(1, 0, 0, 30)
+    statusLabel.Position = UDim2.new(0, 0, 0.15, 0)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Text = 'Dupe: OFF'
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    statusLabel.TextScaled = true
+    statusLabel.Font = Enum.Font.SourceSansBold
+    statusLabel.Parent = logoFrame
+
+    -- DUPE toggle button
+    local dupeButton = Instance.new('TextButton')
+    dupeButton.Size = UDim2.new(0.8, 0, 0, 30)
+    dupeButton.Position = UDim2.new(0.1, 0, 0.55, 0)
+    dupeButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+    dupeButton.Text = 'START DUPE'
+    dupeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    dupeButton.TextScaled = true
+    dupeButton.Font = Enum.Font.SourceSansBold
+    dupeButton.Parent = logoFrame
+
+    -- HOW TO DUPE button
+    local howToButton = Instance.new('TextButton')
+    howToButton.Size = UDim2.new(0.8, 0, 0, 30)
+    howToButton.Position = UDim2.new(0.1, 0, 0.75, 0)
+    howToButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    howToButton.Text = 'How To Dupe'
+    howToButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    howToButton.TextScaled = true
+    howToButton.Font = Enum.Font.SourceSansBold
+    howToButton.Parent = logoFrame
+
+    -- Instructions popup
+    local instructionLabel = Instance.new('TextLabel')
+    instructionLabel.Size = UDim2.new(0, 260, 0, 120)
+    instructionLabel.Position = UDim2.new(0, 10, 0, 10)
+    instructionLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    instructionLabel.BackgroundTransparency = 0.3
+    instructionLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    instructionLabel.TextScaled = true
+    instructionLabel.Font = Enum.Font.SourceSansBold
+    instructionLabel.Visible = false
+    instructionLabel.Text =
+        '1. Hold Gun and Press Start\n2. Wait a few seconds\n3. Gun will dupe & auto-equip\n4. Press Stop to end'
+    instructionLabel.Parent = screenGui
+
+    -- Dragging support for logo
+    local UIS = game:GetService('UserInputService')
+    local dragging, dragInput, dragStart, startPos
+
+    logoFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = logoFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    logoFrame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+
+    UIS.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            logoFrame.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    return dupeButton, howToButton, statusLabel, instructionLabel
+end
+
+-- Ping detection
+local function getPing()
+    local Player = Players.LocalPlayer
+    if typeof(Player.GetNetworkPing) == 'function' then
+        local success, result = pcall(function()
+            return tonumber(string.match(Player:GetNetworkPing(), '%d+'))
+        end)
+        if success and result then
+            return result
+        end
+    end
+    return 100
+end
+
+-- Main dupe logic (auto equips)
+local function duplicateGun()
+    local Character = Player.Character or Player.CharacterAdded:Wait()
+    local Backpack = Player:WaitForChild('Backpack')
+
+    local Tool = Character:FindFirstChildOfClass('Tool')
+    if not Tool then
+        return
+    end
+
+    Tool.Parent = Backpack
+    task.wait(0.5)
+
+    local ToolName = Tool.Name
+    local ToolId = nil
+
+    local ping = getPing()
+    local delay = 0.25 + ((math.clamp(ping, 0, 300) / 300) * 0.03)
+
+    local marketconnection = ReplicatedStorage.MarketItems.ChildAdded:Connect(
+        function(item)
+            if item.Name == ToolName then
+                local owner = item:WaitForChild('owner', 2)
+                if owner and owner.Value == Player.Name then
+                    ToolId = item:GetAttribute('SpecialId')
+                end
+            end
+        end
+    )
+
+    task.spawn(function()
+        ReplicatedStorage.ListWeaponRemote:FireServer(ToolName, 99999)
+    end)
+
+    task.wait(delay)
+
+    task.spawn(function()
+        ReplicatedStorage.BackpackRemote:InvokeServer('Store', ToolName)
+    end)
+
+    task.wait(3)
+
+    if ToolId then
+        task.spawn(function()
+            ReplicatedStorage.BuyItemRemote:FireServer(
+                ToolName,
+                'Remove',
+                ToolId
+            )
+        end)
+    end
+
+    -- Grab duplicated gun
+    task.spawn(function()
+        ReplicatedStorage.BackpackRemote:InvokeServer('Grab', ToolName)
+    end)
+
+    task.wait(1)
+
+    -- Auto re-equip
+    local dupedTool = Backpack:FindFirstChild(ToolName)
+    if dupedTool then
+        dupedTool.Parent = Character
+    end
+
+    marketconnection:Disconnect()
+end
+
+-- Setup UI
+local dupeButton, howToButton, statusLabel, instructionLabel = setupDupeUI()
+
+-- Toggle loop
+local dupeRunning = false
+dupeButton.MouseButton1Click:Connect(function()
+    dupeRunning = not dupeRunning
+    if dupeRunning then
+        statusLabel.Text = 'Dupe: RUNNING...'
+        dupeButton.Text = 'STOP DUPE'
+        task.spawn(function()
+            while dupeRunning do
+                duplicateGun()
+                task.wait(2) -- adjust wait time between dupes
+            end
+        end)
+    else
+        statusLabel.Text = 'Dupe: OFF'
+        dupeButton.Text = 'START DUPE'
+    end
+end)
+
+-- Bind HOW TO DUPE button
+howToButton.MouseButton1Click:Connect(function()
+    instructionLabel.Visible = true
+    task.delay(5, function()
+        instructionLabel.Visible = false
+    end)
+end)
